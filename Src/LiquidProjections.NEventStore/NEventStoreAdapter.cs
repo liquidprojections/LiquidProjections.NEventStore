@@ -286,7 +286,7 @@ namespace LiquidProjections.NEventStore
             {
                 transactions = await Task
                     .Run(() => eventStore
-                        .GetFrom(previousCheckpoint.ToString())
+                        .GetFrom((previousCheckpoint == 0) ? null : previousCheckpoint.ToString())
                         .Take(maxPageSize)
                         .Select(ToTransaction)
                         .ToList())

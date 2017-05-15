@@ -14,13 +14,6 @@ namespace LiquidProjections.NEventStore.Specs
 {
     namespace EventStoreClientSpecs
     {
-        // TODO: Lots of subscriptions for the same checkpoint result in a single query when a new event is pushed
-        // TODO: Multiple serialized subscriptions for the same checkpoint result in a single query when executed within the cache window
-        // TODO: Multiple serialized subscriptions for the same checkpoint result in a multiple queries when executed outside the cache window
-        // TODO: When disposing the adapter, no transactions should be published to subscribers anymore
-        // TODO: When disposing the adapter, no queries must happend anymore
-        // TODO: When disposing a subscription, no transactions should be published to the subscriber anymore
-
         public class When_the_persistency_engine_is_temporarily_unavailable : GivenSubject<NEventStoreAdapter>
         {
             private readonly TimeSpan pollingInterval = 1.Seconds();
@@ -94,7 +87,7 @@ namespace LiquidProjections.NEventStore.Specs
             [Fact]
             public async Task Then_it_should_convert_the_commit_details_to_a_transaction()
             {
-                Transaction actualTransaction = await transactionHandledSource.Task;
+                Transaction actualTransaction = await transactionHandledSource.Task.TimeoutAfter(30.Seconds()); ;
 
                 var commit = The<ICommit>();
                 actualTransaction.Id.Should().Be(commit.CommitId.ToString());
@@ -132,7 +125,7 @@ namespace LiquidProjections.NEventStore.Specs
 
                 When(async () =>
                 {
-                    await eventStoreQueriedSource.Task;
+                    await eventStoreQueriedSource.Task.TimeoutAfter(30.Seconds()); ;
                 });
             }
 
@@ -180,7 +173,7 @@ namespace LiquidProjections.NEventStore.Specs
             [Fact]
             public async Task Then_it_should_convert_the_unprojected_commit_details_to_a_transaction()
             {
-                Transaction actualTransaction = await transactionHandledSource.Task;
+                Transaction actualTransaction = await transactionHandledSource.Task.TimeoutAfter(30.Seconds()); ;
 
                 actualTransaction.Checkpoint.Should().Be(124);
             }
@@ -204,7 +197,7 @@ namespace LiquidProjections.NEventStore.Specs
                     Subject.Subscribe(1000, transactions => Task.FromResult(0));
                 });
 
-                When(() => Subject.Dispose(), deferedExecution: true);
+                When(() => Subject.Dispose(), deferredExecution: true);
             }
 
             [Fact]
@@ -236,7 +229,7 @@ namespace LiquidProjections.NEventStore.Specs
                     subscription = Subject.Subscribe(1000, transactions => Task.FromResult(0));
                 });
 
-                When(() => subscription.Dispose(), deferedExecution: true);
+                When(() => subscription.Dispose(), deferredExecution: true);
             }
 
             [Fact]
