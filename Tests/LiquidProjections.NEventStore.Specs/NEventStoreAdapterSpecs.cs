@@ -98,6 +98,47 @@ namespace LiquidProjections.NEventStore.Specs
                 actualTransaction.Events.ShouldBeEquivalentTo(commit.Events, options => options.ExcludingMissingMembers());
             }
         }
+        public class When_requesting_a_subscription_beyond_the_highest_available_checkpoint : GivenSubject<NEventStoreAdapter>
+        {
+            private readonly TimeSpan pollingInterval = 1.Seconds();
+            private TaskCompletionSource<Transaction> transactionHandledSource = new TaskCompletionSource<Transaction>();
+            
+            public When_requesting_a_subscription_beyond_the_highest_available_checkpoint()
+            {
+                Given(() =>
+                {
+                    UseThe((ICommit) new CommitBuilder().WithCheckpoint("2").Build());
+
+                    var eventStore = A.Fake<IPersistStreams>();
+                    A.CallTo(() => eventStore.GetFrom(A<string>.Ignored)).Returns(new[] {The<ICommit>()});
+
+                    WithSubject(_ => new NEventStoreAdapter(eventStore, 11, pollingInterval, 100, () => DateTime.UtcNow));
+                });
+
+                When(() =>
+                {
+                    Subject.Subscribe(lastProcessedCheckpoint: 1000, handler: transactions =>
+                    {
+                        transactionHandledSource.SetResult(transactions.First());
+
+                        return Task.FromResult(0);
+                    });
+                });
+            }
+
+            [Fact]
+            public async Task Then_it_should_provide_the_highest_available_commit()
+            {
+                Transaction actualTransaction = await transactionHandledSource.Task.TimeoutAfter(30.Seconds()); ;
+
+                actualTransaction.Id.Should().Be(The<ICommit>().CommitId.ToString());
+                actualTransaction.Checkpoint.Should().Be(long.Parse(The<ICommit>().CheckpointToken));
+                actualTransaction.TimeStampUtc.Should().Be(The<ICommit>().CommitStamp);
+                actualTransaction.StreamId.Should().Be(The<ICommit>().StreamId);
+
+                actualTransaction.Events.ShouldBeEquivalentTo(The<ICommit>().Events, options => options.ExcludingMissingMembers());
+            }
+        }
 
         public class When_there_are_no_more_commits : GivenSubject<NEventStoreAdapter>
         {
