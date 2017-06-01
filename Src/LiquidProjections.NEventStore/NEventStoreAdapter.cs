@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using LiquidProjections.Abstractions;
 using NEventStore;
 using NEventStore.Persistence;
 using LiquidProjections.NEventStore.Logging;
@@ -16,7 +17,7 @@ namespace LiquidProjections.NEventStore
         private readonly Func<DateTime> getUtcNow;
         private readonly IPersistStreams eventStore;
         internal readonly HashSet<Subscription> subscriptions = new HashSet<Subscription>();
-        internal volatile bool isDisposed;
+        private volatile bool isDisposed;
         internal readonly object subscriptionLock = new object();
         private Task<Page> currentLoader;
 
@@ -38,16 +39,28 @@ namespace LiquidProjections.NEventStore
             transactionCacheByPreviousCheckpoint = new LruCache<long, Transaction>(cacheSize);
         }
 
-        public IDisposable Subscribe(long? lastProcessedCheckpoint, Func<IReadOnlyList<Transaction>, Task> handler)
+        public IDisposable Subscribe(long? lastProcessedCheckpoint, Subscriber subscriber, string subscriptionId)
         {
-            return Subscribe(lastProcessedCheckpoint, handler, null);
-        }
+            if (subscriber == null)
+            {
+                throw new ArgumentNullException(nameof(subscriber));
+            }
 
-        public IDisposable Subscribe(long? lastProcessedCheckpoint, Func<IReadOnlyList<Transaction>, Task> handler,
-            string subscriptionId)
-        {
-            var subscriber = new Subscriber(this, lastProcessedCheckpoint ?? 0, subscriptionId);
-            return subscriber.Subscribe(handler);
+            Subscription subscription;
+
+            lock (subscriptionLock)
+            {
+                if (isDisposed)
+                {
+                    throw new ObjectDisposedException(typeof(NEventStoreAdapter).FullName);
+                }
+
+                subscription = new Subscription(this, lastProcessedCheckpoint ?? 0, subscriber, subscriptionId);
+                subscriptions.Add(subscription);
+            }
+
+            subscription.Start();
+            return subscription;
         }
 
         internal async Task<Page> GetNextPage(long previousCheckpoint, string subscriptionId = null)

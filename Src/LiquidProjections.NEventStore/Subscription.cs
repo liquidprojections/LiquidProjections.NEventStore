@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using LiquidProjections.Abstractions;
 
 namespace LiquidProjections.NEventStore
 {
@@ -14,18 +15,19 @@ namespace LiquidProjections.NEventStore
         private readonly object syncRoot = new object();
         private bool isDisposed;
         private long previousCheckpoint;
-        private readonly Func<IReadOnlyList<Transaction>, Task> observer;
+        private readonly Subscriber subscriber;
 
         public Subscription(NEventStoreAdapter eventStoreClient, long previousCheckpoint,
-            Func<IReadOnlyList<Transaction>, Task> observer, string subscriptionId = null)
+            Subscriber subscriber, string subscriptionId = null)
         {
             this.eventStoreClient = eventStoreClient;
             this.previousCheckpoint = previousCheckpoint;
-            this.observer = observer;
+            this.subscriber = subscriber;
             Id = subscriptionId;
         }
 
         public Task Task { get; private set; }
+
         public string Id { get; }
 
         public void Start()
@@ -130,7 +132,11 @@ namespace LiquidProjections.NEventStore
                         $"to checkpoint {page.Transactions.Last().Checkpoint}.");
 #endif
 
-                    await observer(page.Transactions).ConfigureAwait(false);
+                    await subscriber.HandleTransactions(page.Transactions, new SubscriptionInfo
+                    {
+                        Id = Id,
+                        Subscription = this
+                    }).ConfigureAwait(false);
 
 #if DEBUG
                     LogProvider.GetCurrentClassLogger().Debug(() =>
