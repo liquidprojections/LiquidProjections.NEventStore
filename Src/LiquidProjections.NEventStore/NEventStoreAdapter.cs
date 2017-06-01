@@ -10,6 +10,10 @@ using LiquidProjections.NEventStore.Logging;
 
 namespace LiquidProjections.NEventStore
 {
+    /// <summary>
+    /// An adapter to NEventStore's <see cref="IPersistStreams"/> that efficiently supports multiple concurrent subscribers
+    /// each interested in a different checkpoint, without hitting the event store concurrently. 
+    /// </summary>
     public class NEventStoreAdapter : IDisposable
     {
         private readonly TimeSpan pollInterval;
@@ -27,8 +31,28 @@ namespace LiquidProjections.NEventStore
         private readonly LruCache<long, Transaction> transactionCacheByPreviousCheckpoint;
 
         private readonly CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
-        private CheckpointRequestTimestamp lastExistingCheckpointRequest;
+        private CheckpointRequestTimestamp lastSuccessfulPollingRequestWithoutResults;
 
+        /// <summary>
+        /// Creates an adapter that observes an implementation of <see cref="IPersistStreams"/> and efficiently handles
+        /// multiple subscribers.
+        /// </summary>
+        /// <param name="eventStore">
+        /// The persistency implementation that the NEventStore is configured with.
+        /// </param>
+        /// <param name="cacheSize">
+        /// The size of the LRU cache that will hold transactions already loaded from the event store. The larger the cache, 
+        /// the higher the chance multiple subscribers can reuse the same transactions without hitting the underlying event store.
+        /// </param>
+        /// <param name="pollInterval">
+        /// The amount of time to wait before polling again after the event store has not yielded any transactions anymore.
+        /// </param>
+        /// <param name="maxPageSize">
+        /// The size of the page of transactions the adapter should load from the event store for every query.
+        /// </param>
+        /// <param name="getUtcNow">
+        /// Provides the current date and time in UTC.
+        /// </param>
         public NEventStoreAdapter(IPersistStreams eventStore, int cacheSize, TimeSpan pollInterval, int maxPageSize,
             Func<DateTime> getUtcNow)
         {
@@ -63,20 +87,20 @@ namespace LiquidProjections.NEventStore
             return subscription;
         }
 
-        internal async Task<Page> GetNextPage(long previousCheckpoint, string subscriptionId = null)
+        internal async Task<Page> GetNextPage(long lastProcessedCheckpoint, string subscriptionId)
         {
             if (isDisposed)
             {
                 throw new ObjectDisposedException(typeof(NEventStoreAdapter).FullName);
             }
 
-            Page pageFromCache = TryGetNextPageFromCache(previousCheckpoint, subscriptionId);
+            Page pageFromCache = TryGetNextPageFromCache(lastProcessedCheckpoint, subscriptionId);
             if (pageFromCache.Transactions.Count > 0)
             {
                 return pageFromCache;
             }
 
-            Page loadedPage = await LoadNextPageSequentially(previousCheckpoint, subscriptionId).ConfigureAwait(false);
+            Page loadedPage = await LoadNextPageSequentially(lastProcessedCheckpoint, subscriptionId).ConfigureAwait(false);
             if (loadedPage.Transactions.Count == maxPageSize)
             {
                 StartPreloadingNextPage(loadedPage.LastCheckpoint, subscriptionId);
@@ -150,13 +174,12 @@ namespace LiquidProjections.NEventStore
                 }
 
                 CheckpointRequestTimestamp effectiveLastExistingCheckpointRequest =
-                    Volatile.Read(ref lastExistingCheckpointRequest);
+                    Volatile.Read(ref lastSuccessfulPollingRequestWithoutResults);
 
                 if ((effectiveLastExistingCheckpointRequest != null) &&
                     (effectiveLastExistingCheckpointRequest.PreviousCheckpoint == previousCheckpoint))
                 {
                     TimeSpan timeAfterPreviousRequest = getUtcNow() - effectiveLastExistingCheckpointRequest.DateTimeUtc;
-
                     if (timeAfterPreviousRequest < pollInterval)
                     {
                         TimeSpan delay = pollInterval - timeAfterPreviousRequest;
@@ -175,7 +198,7 @@ namespace LiquidProjections.NEventStore
                         subscriptionId)
                     .ConfigureAwait(false);
 
-                if (candidatePage.PreviousCheckpoint == previousCheckpoint && candidatePage.Transactions.Count > 0)
+                if (candidatePage.PreviousCheckpoint == previousCheckpoint)
                 {
                     return candidatePage;
                 }
@@ -312,7 +335,7 @@ namespace LiquidProjections.NEventStore
                         $"Failed loading transactions after checkpoint {previousCheckpoint} from NEventStore",
                         exception);
 
-                return new Page(previousCheckpoint, new List<Transaction>());
+                throw;
             }
 
             if (transactions.Count > 0)
@@ -347,7 +370,7 @@ namespace LiquidProjections.NEventStore
 #endif
 
                 Volatile.Write(
-                    ref lastExistingCheckpointRequest,
+                    ref lastSuccessfulPollingRequestWithoutResults,
                     new CheckpointRequestTimestamp(previousCheckpoint, timeOfRequestUtc));
             }
 

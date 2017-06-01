@@ -1,27 +1,26 @@
-﻿using LiquidProjections.NEventStore.Logging;
-using System;
-using System.Collections.Generic;
+﻿using System;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using LiquidProjections.Abstractions;
+using LiquidProjections.NEventStore.Logging;
 
 namespace LiquidProjections.NEventStore
 {
     internal sealed class Subscription : IDisposable
     {
-        private readonly NEventStoreAdapter eventStoreClient;
+        private readonly NEventStoreAdapter eventStoreAdapter;
         private CancellationTokenSource cancellationTokenSource;
         private readonly object syncRoot = new object();
         private bool isDisposed;
-        private long previousCheckpoint;
+        private long lastProcessedCheckpoint;
         private readonly Subscriber subscriber;
 
-        public Subscription(NEventStoreAdapter eventStoreClient, long previousCheckpoint,
+        public Subscription(NEventStoreAdapter eventStoreAdapter, long lastProcessedCheckpoint,
             Subscriber subscriber, string subscriptionId = null)
         {
-            this.eventStoreClient = eventStoreClient;
-            this.previousCheckpoint = previousCheckpoint;
+            this.eventStoreAdapter = eventStoreAdapter;
+            this.lastProcessedCheckpoint = lastProcessedCheckpoint;
             this.subscriber = subscriber;
             Id = subscriptionId;
         }
@@ -49,14 +48,110 @@ namespace LiquidProjections.NEventStore
                 LogProvider.GetCurrentClassLogger().Debug(() => $"Subscription {Id ?? "without ID"} has been started.");
 #endif
 
-                Task = Task.Factory
-                    .StartNew(
-                        RunAsync,
+                SubscriptionInfo info = new SubscriptionInfo
+                {
+                    Id = Id,
+                    Subscription = this
+                };
+
+                Task = Task.Factory.StartNew(async () =>
+                        {
+                            try
+                            {
+                                await RunAsync(info);
+                            }
+                            catch (OperationCanceledException)
+                            {
+                                // Do nothing.
+                            }
+                            catch (Exception exception)
+                            {
+                                LogProvider.GetCurrentClassLogger().FatalException(
+                                    "NEventStore polling task has failed. Event subscription has been cancelled.",
+                                    exception);
+                            }
+                        },
                         cancellationTokenSource.Token,
                         TaskCreationOptions.DenyChildAttach | TaskCreationOptions.LongRunning,
                         TaskScheduler.Default)
                     .Unwrap();
             }
+        }
+
+        private async Task RunAsync(SubscriptionInfo info)
+        {
+            const int offsetToDetectAheadSubscriber = 1;
+            long actualRequestedLastCheckpoint = lastProcessedCheckpoint;
+            lastProcessedCheckpoint = lastProcessedCheckpoint > 0 ? lastProcessedCheckpoint - offsetToDetectAheadSubscriber : 0;
+            bool firstRequestAfterSubscribing = true;
+
+            while (!cancellationTokenSource.IsCancellationRequested)
+            {
+                Page page = await TryGetNextPage(lastProcessedCheckpoint);
+                if (page != null)
+                {
+                    var transactions = page.Transactions;
+
+                    if (firstRequestAfterSubscribing)
+                    {
+                        if (!transactions.Any())
+                    {
+                        await subscriber.NoSuchCheckpoint(info);
+                    }
+                    else
+                    {
+                            transactions = transactions
+                            .Where(t => t.Checkpoint > actualRequestedLastCheckpoint)
+                                .ToReadOnlyList();
+                        }
+
+                        firstRequestAfterSubscribing = false;
+                    }
+
+                        if (transactions.Count > 0)
+                        {
+                            await subscriber.HandleTransactions(transactions, info).ConfigureAwait(false);
+                        }
+#if DEBUG
+                    LogProvider.GetCurrentClassLogger().Debug(() =>
+                        $"Subscription {Id ?? "without ID"} has processed a page of size {page.Transactions.Count} " +
+                        $"from checkpoint {page.Transactions.First().Checkpoint} " +
+                        $"to checkpoint {page.Transactions.Last().Checkpoint}.");
+#endif
+
+                    lastProcessedCheckpoint = page.LastCheckpoint;
+                }
+            }
+        }
+
+        private async Task<Page> TryGetNextPage(long checkpoint)
+        {
+            Page page = null;
+
+            try
+            {
+#if DEBUG
+                LogProvider.GetCurrentClassLogger().Debug(() =>
+                    $"Subscription {Id} is requesting a page after checkpoint {checkpoint}.");
+#endif
+
+                page = await eventStoreAdapter.GetNextPage(checkpoint, Id)
+                    .WithWaitCancellation(cancellationTokenSource.Token)
+                    .ConfigureAwait(false);
+
+#if DEBUG
+                LogProvider.GetCurrentClassLogger().Debug(() =>
+                    $"Subscription {Id} has got a page of size {page.Transactions.Count} " +
+                    $"from checkpoint {page.Transactions.First().Checkpoint} " +
+                    $"to checkpoint {page.Transactions.Last().Checkpoint}.");
+#endif
+            }
+            catch
+            {
+                // Just continue the next iteration after a small pause
+            }
+
+            return page;
         }
 
         public void Complete()
@@ -95,68 +190,14 @@ namespace LiquidProjections.NEventStore
                     cancellationTokenSource.Dispose();
                 }
 
-                lock (eventStoreClient.subscriptionLock)
+                lock (eventStoreAdapter.subscriptionLock)
                 {
-                    eventStoreClient.subscriptions.Remove(this);
+                    eventStoreAdapter.subscriptions.Remove(this);
                 }
 
 #if DEBUG
                 LogProvider.GetCurrentClassLogger().Debug(() => $"Subscription {Id ?? "without ID"} has been stopped.");
 #endif
-            }
-        }
-
-        private async Task RunAsync()
-        {
-            try
-            {
-                while (!cancellationTokenSource.IsCancellationRequested)
-                {
-#if DEBUG
-                    LogProvider.GetCurrentClassLogger().Debug(() =>
-                        $"Subscription {Id ?? "without ID"} is requesting a page after checkpoint {previousCheckpoint}.");
-#endif
-
-                    Page page = await eventStoreClient.GetNextPage(previousCheckpoint
-#if DEBUG
-                        , Id
-#endif
-                        )
-                        .WithWaitCancellation(cancellationTokenSource.Token)
-                        .ConfigureAwait(false);
-
-#if DEBUG
-                    LogProvider.GetCurrentClassLogger().Debug(() =>
-                        $"Subscription {Id ?? "without ID"} has got a page of size {page.Transactions.Count} " +
-                        $"from checkpoint {page.Transactions.First().Checkpoint} "+
-                        $"to checkpoint {page.Transactions.Last().Checkpoint}.");
-#endif
-
-                    await subscriber.HandleTransactions(page.Transactions, new SubscriptionInfo
-                    {
-                        Id = Id,
-                        Subscription = this
-                    }).ConfigureAwait(false);
-
-#if DEBUG
-                    LogProvider.GetCurrentClassLogger().Debug(() =>
-                        $"Subscription {Id ?? "without ID"} has processed a page of size {page.Transactions.Count} " +
-                        $"from checkpoint {page.Transactions.First().Checkpoint} " +
-                        $"to checkpoint {page.Transactions.Last().Checkpoint}.");
-#endif
-
-                    previousCheckpoint = page.LastCheckpoint;
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                // Do nothing.
-            }
-            catch (Exception exception)
-            {
-                LogProvider.GetCurrentClassLogger().FatalException(
-                    "NEventStore polling task has failed. Event subscription has been cancelled.",
-                    exception);
             }
         }
     }

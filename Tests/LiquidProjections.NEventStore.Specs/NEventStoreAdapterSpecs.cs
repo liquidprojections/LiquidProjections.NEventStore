@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Threading;
@@ -53,6 +55,7 @@ namespace LiquidProjections.NEventStore.Specs
             {
                 do
                 {
+                    // REFACTOR: probably better to track polling invocations
                     await Task.Delay(pollingInterval);
                 }
                 while (actualTransaction == null);
@@ -112,19 +115,16 @@ namespace LiquidProjections.NEventStore.Specs
 
         public class When_requesting_a_subscription_beyond_the_highest_available_checkpoint : GivenSubject<CreateSubscription>
         {
-            private readonly TimeSpan pollingInterval = 1.Seconds();
-            private readonly TaskCompletionSource<Transaction> transactionHandledSource = new TaskCompletionSource<Transaction>();
+            private readonly TaskCompletionSource<bool> noSuchCheckpointRaised = new TaskCompletionSource<bool>();
 
             public When_requesting_a_subscription_beyond_the_highest_available_checkpoint()
             {
                 Given(() =>
                 {
-                    UseThe((ICommit) new CommitBuilder().WithCheckpoint("2").Build());
-
                     var eventStore = A.Fake<IPersistStreams>();
-                    A.CallTo(() => eventStore.GetFrom(A<string>.Ignored)).Returns(new[] {The<ICommit>()});
+                    A.CallTo(() => eventStore.GetFrom("999")).Returns(new ICommit[0]);
 
-                    var adapter = new NEventStoreAdapter(eventStore, 11, pollingInterval, 100, () => DateTime.UtcNow);
+                    var adapter = new NEventStoreAdapter(eventStore, 11, 1.Seconds(), 100, () => DateTime.UtcNow);
 
                     WithSubject(_ => adapter.Subscribe);
                 });
@@ -135,7 +135,11 @@ namespace LiquidProjections.NEventStore.Specs
                     {
                         HandleTransactions = (transactions, info) =>
                         {
-                            transactionHandledSource.SetResult(transactions.First());
+                            throw new InvalidOperationException("The adapter should not provide any events.");
+                        },
+                        NoSuchCheckpoint = info =>
+                        {
+                            noSuchCheckpointRaised.SetResult(true);
 
                             return Task.FromResult(0);
                         }
@@ -144,70 +148,75 @@ namespace LiquidProjections.NEventStore.Specs
             }
 
             [Fact]
-            public async Task Then_it_should_provide_the_highest_available_commit()
+            public async Task Then_it_should_notify_the_subscriber_about_the_non_existing_checkpoint()
             {
-                Transaction actualTransaction = await transactionHandledSource.Task.TimeoutAfter(30.Seconds());
-                ;
-
-                actualTransaction.Id.Should().Be(The<ICommit>().CommitId.ToString());
-                actualTransaction.Checkpoint.Should().Be(long.Parse(The<ICommit>().CheckpointToken));
-                actualTransaction.TimeStampUtc.Should().Be(The<ICommit>().CommitStamp);
-                actualTransaction.StreamId.Should().Be(The<ICommit>().StreamId);
-
-                actualTransaction.Events.ShouldBeEquivalentTo(The<ICommit>().Events,
-                    options => options.ExcludingMissingMembers());
+                await noSuchCheckpointRaised.Task.TimeoutAfter(30.Seconds());
             }
         }
 
-        public class When_there_are_no_more_commits : GivenSubject<CreateSubscription>
+        public class When_there_are_no_more_commits : GivenSubject<CreateSubscription, IDisposable>
         {
-            private readonly TimeSpan pollingInterval = 500.Milliseconds();
-            private DateTime utcNow = DateTime.UtcNow;
-            private IPersistStreams eventStore;
-            private readonly TaskCompletionSource<object> eventStoreQueriedSource = new TaskCompletionSource<object>();
+            private readonly BlockingCollection<DateTime> pollingTimeStamps = new BlockingCollection<DateTime>();
+            private readonly TaskCompletionSource<bool> pollingCompleted = new TaskCompletionSource<bool>();
+            private int requestedCheckpoint = 1;
+            private readonly TimeSpan pollingInterval = 5.Seconds();
 
             public When_there_are_no_more_commits()
             {
                 Given(() =>
                 {
-                    eventStore = A.Fake<IPersistStreams>();
-                    A.CallTo(() => eventStore.GetFrom(A<string>.Ignored))
-                        .Invokes(_ =>
+                    var eventStore = A.Fake<IPersistStreams>();
+
+                    A.CallTo(() => eventStore.GetFrom(A<string>.Ignored)).ReturnsLazily<IEnumerable<ICommit>, string>(checkpointToken =>
+                    {
+                        pollingTimeStamps.Add(DateTime.UtcNow);
+                        if (pollingTimeStamps.Count == 3)
                         {
-                            eventStoreQueriedSource.SetResult(null);
-                        })
-                        .Returns(new ICommit[0]);
+                            pollingCompleted.SetResult(true);
+                        }
+
+                        long checkPoint = (checkpointToken != null) ? long.Parse(checkpointToken) : 0;
+                        long offsetToDetectAheadSubscriber = 1;
+
+                        if (checkPoint <= (requestedCheckpoint - offsetToDetectAheadSubscriber))
+                        {
+                            return new CommitBuilder().WithCheckpoint(checkPoint + 1).BuildAsEnumerable();
+                        }
+                        else
+                        {
+                            return new ICommit[0];
+                        }
+                    });
 
                     var adapter = new NEventStoreAdapter(eventStore, 11, pollingInterval, 100, () => DateTime.UtcNow);
                     WithSubject(_ => adapter.Subscribe);
+                });
 
-                    Subject(1000, new Subscriber
+                When(() =>
+                {
+                    return Subject(requestedCheckpoint, new Subscriber
                     {
                         HandleTransactions = (transactions, info) => Task.FromResult(0)
                     }, "someId");
                 });
-
-                When(async () =>
-                {
-                    await eventStoreQueriedSource.Task.TimeoutAfter(30.Seconds());
-                    ;
-                });
             }
 
             [Fact]
-            public void Then_it_should_wait_for_the_polling_interval_to_retry()
+            public async Task Then_it_should_wait_for_the_polling_interval_before_polling_again()
             {
-                A.CallTo(() => eventStore.GetFrom(A<string>.Ignored)).MustHaveHappened(Repeated.Exactly.Once);
+                await pollingCompleted.Task.TimeoutAfter(30.Seconds());
 
-                utcNow = utcNow.Add(1.Seconds());
+                Result.Dispose();
 
-                A.CallTo(() => eventStore.GetFrom(A<string>.Ignored)).MustHaveHappened(Repeated.Exactly.Once);
+                DateTime lastCallThatDidNotReturnTransactions = pollingTimeStamps.ToArray()[1];
+                DateTime callAfterPollingInterval = pollingTimeStamps.Last();
+
+                callAfterPollingInterval.Should().BeAtLeast(pollingInterval).After(lastCallThatDidNotReturnTransactions);
             }
         }
 
         public class When_a_commit_is_already_projected : GivenSubject<CreateSubscription>
         {
-            private readonly TimeSpan pollingInterval = 1.Seconds();
             private readonly TaskCompletionSource<Transaction> transactionHandledSource = new TaskCompletionSource<Transaction>();
 
             public When_a_commit_is_already_projected()
@@ -221,7 +230,7 @@ namespace LiquidProjections.NEventStore.Specs
                     A.CallTo(() => eventStore.GetFrom(A<string>.Ignored)).Returns(new[] {projectedCommit, unprojectedCommit});
                     A.CallTo(() => eventStore.GetFrom("123")).Returns(new[] {unprojectedCommit});
 
-                    var adapter = new NEventStoreAdapter(eventStore, 11, pollingInterval, 100, () => DateTime.UtcNow);
+                    var adapter = new NEventStoreAdapter(eventStore, 11, 1.Seconds(), 100, () => DateTime.UtcNow);
                     WithSubject(_ => adapter.Subscribe);
                 });
 
@@ -243,7 +252,6 @@ namespace LiquidProjections.NEventStore.Specs
             public async Task Then_it_should_convert_the_unprojected_commit_details_to_a_transaction()
             {
                 Transaction actualTransaction = await transactionHandledSource.Task.TimeoutAfter(30.Seconds());
-                ;
 
                 actualTransaction.Checkpoint.Should().Be(124);
             }
@@ -251,18 +259,16 @@ namespace LiquidProjections.NEventStore.Specs
 
         public class When_disposing : GivenSubject<NEventStoreAdapter>
         {
-            private readonly TimeSpan pollingInterval = 500.Milliseconds();
             private readonly DateTime utcNow = DateTime.UtcNow;
-            private IPersistStreams eventStore;
 
             public When_disposing()
             {
                 Given(() =>
                 {
-                    eventStore = A.Fake<IPersistStreams>();
+                    var eventStore = A.Fake<IPersistStreams>();
                     A.CallTo(() => eventStore.GetFrom(A<string>.Ignored)).Returns(new ICommit[0]);
 
-                    WithSubject(_ => new NEventStoreAdapter(eventStore, 11, pollingInterval, 100, () => utcNow));
+                    WithSubject(_ => new NEventStoreAdapter(eventStore, 11, 500.Milliseconds(), 100, () => utcNow));
 
                     Subject.Subscribe(null, new Subscriber
                     {
@@ -287,14 +293,13 @@ namespace LiquidProjections.NEventStore.Specs
         {
             private readonly TimeSpan pollingInterval = 500.Milliseconds();
             private readonly DateTime utcNow = DateTime.UtcNow;
-            private IPersistStreams eventStore;
             private IDisposable subscription;
 
             public When_disposing_subscription()
             {
                 Given(() =>
                 {
-                    eventStore = A.Fake<IPersistStreams>();
+                    var eventStore = A.Fake<IPersistStreams>();
                     A.CallTo(() => eventStore.GetFrom(A<string>.Ignored)).Returns(new ICommit[0]);
 
                     WithSubject(_ => new NEventStoreAdapter(eventStore, 11, pollingInterval, 100, () => utcNow));
