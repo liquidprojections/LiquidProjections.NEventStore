@@ -134,7 +134,7 @@ namespace LiquidProjections.NEventStore
 
 #if DEBUG
                 LogProvider.GetCurrentClassLogger().Debug(() =>
-                    $"Subscription {subscriptionId ?? "without ID"} has found a page of size {resultPage.Count} " +
+                    $"Subscription {subscriptionId} has found a page of size {resultPage.Count} " +
                     $"from checkpoint {resultPage.First().Checkpoint} " +
                     $"to checkpoint {resultPage.Last().Checkpoint} in the cache.");
 #endif
@@ -144,7 +144,7 @@ namespace LiquidProjections.NEventStore
 
 #if DEBUG
             LogProvider.GetCurrentClassLogger().Debug(() =>
-                $"Subscription {subscriptionId ?? "without ID"} has not found the next transaction in the cache.");
+                $"Subscription {subscriptionId} has not found the next transaction in the cache.");
 #endif
 
             return new Page(previousCheckpoint, new Transaction[0]);
@@ -154,7 +154,7 @@ namespace LiquidProjections.NEventStore
         {
 #if DEBUG
             LogProvider.GetCurrentClassLogger().Debug(() =>
-                $"Subscription {subscriptionId ?? "without ID"} has started preloading transactions " +
+                $"Subscription {subscriptionId} has started preloading transactions " +
                 $"after checkpoint {previousCheckpoint}.");
 #endif
 
@@ -186,7 +186,7 @@ namespace LiquidProjections.NEventStore
 
 #if DEBUG
                         LogProvider.GetCurrentClassLogger().Debug(() =>
-                            $"Subscription {subscriptionId ?? "without ID"} is waiting " +
+                            $"Subscription {subscriptionId} is waiting " +
                             $"for {delay} before checking for new transactions.");
 #endif
 
@@ -235,7 +235,7 @@ namespace LiquidProjections.NEventStore
                 {
 #if DEBUG
                     LogProvider.GetCurrentClassLogger()
-                        .Debug(() => $"Subscription {subscriptionId ?? "without ID"} created a loader {loader.Id} " +
+                        .Debug(() => $"Subscription {subscriptionId} created a loader {loader.Id} " +
                                      $"for a page after checkpoint {previousCheckpoint}.");
 #endif
 
@@ -246,7 +246,7 @@ namespace LiquidProjections.NEventStore
                 {
 #if DEBUG
                     LogProvider.GetCurrentClassLogger()
-                        .Debug(() => $"Subscription {subscriptionId ?? "without ID"} is waiting for loader {loader.Id}.");
+                        .Debug(() => $"Subscription {subscriptionId} is waiting for loader {loader.Id}.");
 #endif
                 }
             }
@@ -267,7 +267,7 @@ namespace LiquidProjections.NEventStore
                 {
 #if DEBUG
                     LogProvider.GetCurrentClassLogger().Debug(() =>
-                        $"Loader for subscription {subscriptionId ?? "without ID"} is no longer the current one.");
+                        $"Loader for subscription {subscriptionId} is no longer the current one.");
 #endif
                     Volatile.Write(ref currentLoader, null);
                 }
@@ -276,7 +276,7 @@ namespace LiquidProjections.NEventStore
             {
 #if DEBUG
                 LogProvider.GetCurrentClassLogger().DebugException(
-                    $"Loader for subscription {subscriptionId ?? "without ID"} has failed.",
+                    $"Loader for subscription {subscriptionId} has failed.",
                     exception);
 #endif
 
@@ -286,7 +286,7 @@ namespace LiquidProjections.NEventStore
 
 #if DEBUG
             LogProvider.GetCurrentClassLogger().Debug(() =>
-                $"Loader for subscription {subscriptionId ?? "without ID"} has completed.");
+                $"Loader for subscription {subscriptionId} has completed.");
 #endif
             loaderCompletionSource.SetResult(nextPage);
         }
@@ -302,7 +302,7 @@ namespace LiquidProjections.NEventStore
 #if DEBUG
                     LogProvider.GetCurrentClassLogger()
                         .Debug(() =>
-                            $"Loader for subscription {subscriptionId ?? "without ID"} has found a page in the cache.");
+                            $"Loader for subscription {subscriptionId} has found a page in the cache.");
 #endif
                     return cachedPage;
                 }
@@ -365,7 +365,7 @@ namespace LiquidProjections.NEventStore
             {
 #if DEBUG
                 LogProvider.GetCurrentClassLogger().Debug(() =>
-                    $"Loader for subscription {subscriptionId ?? "without ID"} has discovered "+
+                    $"Loader for subscription {subscriptionId} has discovered "+
                     $"that there are no new transactions yet. Next request for the new transactions will be delayed.");
 #endif
 

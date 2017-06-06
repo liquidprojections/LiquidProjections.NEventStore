@@ -17,7 +17,7 @@ namespace LiquidProjections.NEventStore
         private readonly Subscriber subscriber;
 
         public Subscription(NEventStoreAdapter eventStoreAdapter, long lastProcessedCheckpoint,
-            Subscriber subscriber, string subscriptionId = null)
+            Subscriber subscriber, string subscriptionId)
         {
             this.eventStoreAdapter = eventStoreAdapter;
             this.lastProcessedCheckpoint = lastProcessedCheckpoint;
@@ -45,7 +45,7 @@ namespace LiquidProjections.NEventStore
 
                 cancellationTokenSource = new CancellationTokenSource();
 #if DEBUG
-                LogProvider.GetCurrentClassLogger().Debug(() => $"Subscription {Id ?? "without ID"} has been started.");
+                LogProvider.GetCurrentClassLogger().Debug(() => $"Subscription {Id} has been started.");
 #endif
 
                 SubscriptionInfo info = new SubscriptionInfo
@@ -114,7 +114,7 @@ namespace LiquidProjections.NEventStore
                         }
 #if DEBUG
                     LogProvider.GetCurrentClassLogger().Debug(() =>
-                        $"Subscription {Id ?? "without ID"} has processed a page of size {page.Transactions.Count} " +
+                        $"Subscription {Id} has processed a page of size {page.Transactions.Count} " +
                         $"from checkpoint {page.Transactions.First().Checkpoint} " +
                         $"to checkpoint {page.Transactions.Last().Checkpoint}.");
 #endif
@@ -178,7 +178,7 @@ namespace LiquidProjections.NEventStore
                 if (cancellationTokenSource != null)
                 {
 #if DEBUG
-                    LogProvider.GetCurrentClassLogger().Debug(() => $"Subscription {Id ?? "without ID"} is being stopped.");
+                    LogProvider.GetCurrentClassLogger().Debug(() => $"Subscription {Id} is being stopped.");
 #endif
 
                     if (!cancellationTokenSource.IsCancellationRequested)
@@ -196,7 +196,7 @@ namespace LiquidProjections.NEventStore
                 }
 
 #if DEBUG
-                LogProvider.GetCurrentClassLogger().Debug(() => $"Subscription {Id ?? "without ID"} has been stopped.");
+                LogProvider.GetCurrentClassLogger().Debug(() => $"Subscription {Id} has been stopped.");
 #endif
             }
         }
