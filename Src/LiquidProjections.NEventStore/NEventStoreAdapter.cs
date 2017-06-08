@@ -3,12 +3,17 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using LiquidProjections.Abstractions;
 using NEventStore;
 using NEventStore.Persistence;
 using LiquidProjections.NEventStore.Logging;
 
 namespace LiquidProjections.NEventStore
 {
+    /// <summary>
+    /// An adapter to NEventStore's <see cref="IPersistStreams"/> that efficiently supports multiple concurrent subscribers
+    /// each interested in a different checkpoint, without hitting the event store concurrently. 
+    /// </summary>
     public class NEventStoreAdapter : IDisposable
     {
         private readonly TimeSpan pollInterval;
@@ -16,7 +21,7 @@ namespace LiquidProjections.NEventStore
         private readonly Func<DateTime> getUtcNow;
         private readonly IPersistStreams eventStore;
         internal readonly HashSet<Subscription> subscriptions = new HashSet<Subscription>();
-        internal volatile bool isDisposed;
+        private volatile bool isDisposed;
         internal readonly object subscriptionLock = new object();
         private Task<Page> currentLoader;
 
@@ -26,8 +31,28 @@ namespace LiquidProjections.NEventStore
         private readonly LruCache<long, Transaction> transactionCacheByPreviousCheckpoint;
 
         private readonly CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
-        private CheckpointRequestTimestamp lastExistingCheckpointRequest;
+        private CheckpointRequestTimestamp lastSuccessfulPollingRequestWithoutResults;
 
+        /// <summary>
+        /// Creates an adapter that observes an implementation of <see cref="IPersistStreams"/> and efficiently handles
+        /// multiple subscribers.
+        /// </summary>
+        /// <param name="eventStore">
+        /// The persistency implementation that the NEventStore is configured with.
+        /// </param>
+        /// <param name="cacheSize">
+        /// The size of the LRU cache that will hold transactions already loaded from the event store. The larger the cache, 
+        /// the higher the chance multiple subscribers can reuse the same transactions without hitting the underlying event store.
+        /// </param>
+        /// <param name="pollInterval">
+        /// The amount of time to wait before polling again after the event store has not yielded any transactions anymore.
+        /// </param>
+        /// <param name="maxPageSize">
+        /// The size of the page of transactions the adapter should load from the event store for every query.
+        /// </param>
+        /// <param name="getUtcNow">
+        /// Provides the current date and time in UTC.
+        /// </param>
         public NEventStoreAdapter(IPersistStreams eventStore, int cacheSize, TimeSpan pollInterval, int maxPageSize,
             Func<DateTime> getUtcNow)
         {
@@ -38,32 +63,44 @@ namespace LiquidProjections.NEventStore
             transactionCacheByPreviousCheckpoint = new LruCache<long, Transaction>(cacheSize);
         }
 
-        public IDisposable Subscribe(long? lastProcessedCheckpoint, Func<IReadOnlyList<Transaction>, Task> handler)
+        public IDisposable Subscribe(long? lastProcessedCheckpoint, Subscriber subscriber, string subscriptionId)
         {
-            return Subscribe(lastProcessedCheckpoint, handler, null);
+            if (subscriber == null)
+            {
+                throw new ArgumentNullException(nameof(subscriber));
+            }
+
+            Subscription subscription;
+
+            lock (subscriptionLock)
+            {
+                if (isDisposed)
+                {
+                    throw new ObjectDisposedException(typeof(NEventStoreAdapter).FullName);
+                }
+
+                subscription = new Subscription(this, lastProcessedCheckpoint ?? 0, subscriber, subscriptionId);
+                subscriptions.Add(subscription);
+            }
+
+            subscription.Start();
+            return subscription;
         }
 
-        public IDisposable Subscribe(long? lastProcessedCheckpoint, Func<IReadOnlyList<Transaction>, Task> handler,
-            string subscriptionId)
-        {
-            var subscriber = new Subscriber(this, lastProcessedCheckpoint ?? 0, subscriptionId);
-            return subscriber.Subscribe(handler);
-        }
-
-        internal async Task<Page> GetNextPage(long previousCheckpoint, string subscriptionId = null)
+        internal async Task<Page> GetNextPage(long lastProcessedCheckpoint, string subscriptionId)
         {
             if (isDisposed)
             {
                 throw new ObjectDisposedException(typeof(NEventStoreAdapter).FullName);
             }
 
-            Page pageFromCache = TryGetNextPageFromCache(previousCheckpoint, subscriptionId);
+            Page pageFromCache = TryGetNextPageFromCache(lastProcessedCheckpoint, subscriptionId);
             if (pageFromCache.Transactions.Count > 0)
             {
                 return pageFromCache;
             }
 
-            Page loadedPage = await LoadNextPageSequentially(previousCheckpoint, subscriptionId).ConfigureAwait(false);
+            Page loadedPage = await LoadNextPageSequentially(lastProcessedCheckpoint, subscriptionId).ConfigureAwait(false);
             if (loadedPage.Transactions.Count == maxPageSize)
             {
                 StartPreloadingNextPage(loadedPage.LastCheckpoint, subscriptionId);
@@ -97,7 +134,7 @@ namespace LiquidProjections.NEventStore
 
 #if DEBUG
                 LogProvider.GetCurrentClassLogger().Debug(() =>
-                    $"Subscription {subscriptionId ?? "without ID"} has found a page of size {resultPage.Count} " +
+                    $"Subscription {subscriptionId} has found a page of size {resultPage.Count} " +
                     $"from checkpoint {resultPage.First().Checkpoint} " +
                     $"to checkpoint {resultPage.Last().Checkpoint} in the cache.");
 #endif
@@ -107,7 +144,7 @@ namespace LiquidProjections.NEventStore
 
 #if DEBUG
             LogProvider.GetCurrentClassLogger().Debug(() =>
-                $"Subscription {subscriptionId ?? "without ID"} has not found the next transaction in the cache.");
+                $"Subscription {subscriptionId} has not found the next transaction in the cache.");
 #endif
 
             return new Page(previousCheckpoint, new Transaction[0]);
@@ -117,7 +154,7 @@ namespace LiquidProjections.NEventStore
         {
 #if DEBUG
             LogProvider.GetCurrentClassLogger().Debug(() =>
-                $"Subscription {subscriptionId ?? "without ID"} has started preloading transactions " +
+                $"Subscription {subscriptionId} has started preloading transactions " +
                 $"after checkpoint {previousCheckpoint}.");
 #endif
 
@@ -137,20 +174,19 @@ namespace LiquidProjections.NEventStore
                 }
 
                 CheckpointRequestTimestamp effectiveLastExistingCheckpointRequest =
-                    Volatile.Read(ref lastExistingCheckpointRequest);
+                    Volatile.Read(ref lastSuccessfulPollingRequestWithoutResults);
 
                 if ((effectiveLastExistingCheckpointRequest != null) &&
                     (effectiveLastExistingCheckpointRequest.PreviousCheckpoint == previousCheckpoint))
                 {
                     TimeSpan timeAfterPreviousRequest = getUtcNow() - effectiveLastExistingCheckpointRequest.DateTimeUtc;
-
                     if (timeAfterPreviousRequest < pollInterval)
                     {
                         TimeSpan delay = pollInterval - timeAfterPreviousRequest;
 
 #if DEBUG
                         LogProvider.GetCurrentClassLogger().Debug(() =>
-                            $"Subscription {subscriptionId ?? "without ID"} is waiting " +
+                            $"Subscription {subscriptionId} is waiting " +
                             $"for {delay} before checking for new transactions.");
 #endif
 
@@ -162,7 +198,7 @@ namespace LiquidProjections.NEventStore
                         subscriptionId)
                     .ConfigureAwait(false);
 
-                if (candidatePage.PreviousCheckpoint == previousCheckpoint && candidatePage.Transactions.Count > 0)
+                if (candidatePage.PreviousCheckpoint == previousCheckpoint)
                 {
                     return candidatePage;
                 }
@@ -199,7 +235,7 @@ namespace LiquidProjections.NEventStore
                 {
 #if DEBUG
                     LogProvider.GetCurrentClassLogger()
-                        .Debug(() => $"Subscription {subscriptionId ?? "without ID"} created a loader {loader.Id} " +
+                        .Debug(() => $"Subscription {subscriptionId} created a loader {loader.Id} " +
                                      $"for a page after checkpoint {previousCheckpoint}.");
 #endif
 
@@ -210,7 +246,7 @@ namespace LiquidProjections.NEventStore
                 {
 #if DEBUG
                     LogProvider.GetCurrentClassLogger()
-                        .Debug(() => $"Subscription {subscriptionId ?? "without ID"} is waiting for loader {loader.Id}.");
+                        .Debug(() => $"Subscription {subscriptionId} is waiting for loader {loader.Id}.");
 #endif
                 }
             }
@@ -231,7 +267,7 @@ namespace LiquidProjections.NEventStore
                 {
 #if DEBUG
                     LogProvider.GetCurrentClassLogger().Debug(() =>
-                        $"Loader for subscription {subscriptionId ?? "without ID"} is no longer the current one.");
+                        $"Loader for subscription {subscriptionId} is no longer the current one.");
 #endif
                     Volatile.Write(ref currentLoader, null);
                 }
@@ -240,7 +276,7 @@ namespace LiquidProjections.NEventStore
             {
 #if DEBUG
                 LogProvider.GetCurrentClassLogger().DebugException(
-                    $"Loader for subscription {subscriptionId ?? "without ID"} has failed.",
+                    $"Loader for subscription {subscriptionId} has failed.",
                     exception);
 #endif
 
@@ -250,7 +286,7 @@ namespace LiquidProjections.NEventStore
 
 #if DEBUG
             LogProvider.GetCurrentClassLogger().Debug(() =>
-                $"Loader for subscription {subscriptionId ?? "without ID"} has completed.");
+                $"Loader for subscription {subscriptionId} has completed.");
 #endif
             loaderCompletionSource.SetResult(nextPage);
         }
@@ -266,7 +302,7 @@ namespace LiquidProjections.NEventStore
 #if DEBUG
                     LogProvider.GetCurrentClassLogger()
                         .Debug(() =>
-                            $"Loader for subscription {subscriptionId ?? "without ID"} has found a page in the cache.");
+                            $"Loader for subscription {subscriptionId} has found a page in the cache.");
 #endif
                     return cachedPage;
                 }
@@ -299,7 +335,7 @@ namespace LiquidProjections.NEventStore
                         $"Failed loading transactions after checkpoint {previousCheckpoint} from NEventStore",
                         exception);
 
-                return new Page(previousCheckpoint, new List<Transaction>());
+                throw;
             }
 
             if (transactions.Count > 0)
@@ -329,12 +365,12 @@ namespace LiquidProjections.NEventStore
             {
 #if DEBUG
                 LogProvider.GetCurrentClassLogger().Debug(() =>
-                    $"Loader for subscription {subscriptionId ?? "without ID"} has discovered "+
+                    $"Loader for subscription {subscriptionId} has discovered "+
                     $"that there are no new transactions yet. Next request for the new transactions will be delayed.");
 #endif
 
                 Volatile.Write(
-                    ref lastExistingCheckpointRequest,
+                    ref lastSuccessfulPollingRequestWithoutResults,
                     new CheckpointRequestTimestamp(previousCheckpoint, timeOfRequestUtc));
             }
 

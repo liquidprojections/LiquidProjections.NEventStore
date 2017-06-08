@@ -32,6 +32,11 @@ namespace LiquidProjections.NEventStore.Specs
                 new Dictionary<string, object>(), events);
         }
 
+        public IEnumerable<Commit> BuildAsEnumerable()
+        {
+            return new[] { Build() };
+        }
+
         public CommitBuilder WithStreamId(string streamId)
         {
             this.streamId = streamId;
@@ -79,6 +84,12 @@ namespace LiquidProjections.NEventStore.Specs
         public CommitBuilder WithCheckpoint(string checkpointToken)
         {
             this.checkpointToken = checkpointToken;
+            return this;
+        }
+
+        public CommitBuilder WithCheckpoint(long checkpoint)
+        {
+            checkpointToken = checkpoint.ToString();
             return this;
         }
 

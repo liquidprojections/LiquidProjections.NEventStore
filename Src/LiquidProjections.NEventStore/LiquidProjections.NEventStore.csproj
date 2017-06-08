@@ -40,7 +40,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="LiquidProjections.Abstractions, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\..\packages\LiquidProjections.Abstractions.1.4.1\lib\netstandard1.1\LiquidProjections.Abstractions.dll</HintPath>
+      <HintPath>..\..\packages\LiquidProjections.Abstractions.2.0.0\lib\netstandard1.1\LiquidProjections.Abstractions.dll</HintPath>
     </Reference>
     <Reference Include="NEventStore, Version=5.2.0.0, Culture=neutral, processorArchitecture=MSIL">
       <HintPath>..\..\packages\NEventStore.5.2.0\lib\net40\NEventStore.dll</HintPath>
@@ -61,10 +61,10 @@
     </Compile>
     <Compile Include="App_Packages\LibLog.4.2\LibLog.cs" />
     <Compile Include="CheckpointRequestTimestamp.cs" />
+    <Compile Include="EnumerableExtensions.cs" />
     <Compile Include="NEventStoreAdapter.cs" />
     <Compile Include="LruCache.cs" />
     <Compile Include="Page.cs" />
-    <Compile Include="Subscriber.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Subscription.cs" />
     <Compile Include="TaskExtensions.cs" />

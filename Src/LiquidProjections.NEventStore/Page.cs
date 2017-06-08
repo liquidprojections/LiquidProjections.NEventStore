@@ -10,6 +10,9 @@ namespace LiquidProjections.NEventStore
             Transactions = transactions;
         }
 
+        /// <summary>
+        /// Gets the checkpoint as it was requested when loading this page.
+        /// </summary>
         public long PreviousCheckpoint { get; }
 
         public IReadOnlyList<Transaction> Transactions { get; }
