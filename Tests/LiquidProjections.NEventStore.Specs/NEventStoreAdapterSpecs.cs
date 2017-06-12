@@ -156,9 +156,9 @@ namespace LiquidProjections.NEventStore.Specs
 
         public class When_there_are_no_more_commits : GivenSubject<CreateSubscription, IDisposable>
         {
-            private readonly BlockingCollection<DateTime> pollingTimeStamps = new BlockingCollection<DateTime>();
+            private readonly BlockingCollection<PollingCall> pollingTimeStamps = new BlockingCollection<PollingCall>();
             private readonly TaskCompletionSource<bool> pollingCompleted = new TaskCompletionSource<bool>();
-            private int requestedCheckpoint = 1;
+            private int subscriptionCheckpoint = 1;
             private readonly TimeSpan pollingInterval = 5.Seconds();
 
             public When_there_are_no_more_commits()
@@ -169,8 +169,8 @@ namespace LiquidProjections.NEventStore.Specs
 
                     A.CallTo(() => eventStore.GetFrom(A<string>.Ignored)).ReturnsLazily<IEnumerable<ICommit>, string>(checkpointToken =>
                     {
-                        pollingTimeStamps.Add(DateTime.UtcNow);
-                        if (pollingTimeStamps.Count == 3)
+                        pollingTimeStamps.Add(new PollingCall(checkpointToken, DateTime.UtcNow));
+                        if (pollingTimeStamps.Count == 4)
                         {
                             pollingCompleted.SetResult(true);
                         }
@@ -178,7 +178,7 @@ namespace LiquidProjections.NEventStore.Specs
                         long checkPoint = (checkpointToken != null) ? long.Parse(checkpointToken) : 0;
                         long offsetToDetectAheadSubscriber = 1;
 
-                        if (checkPoint <= (requestedCheckpoint - offsetToDetectAheadSubscriber))
+                        if (checkPoint <= (subscriptionCheckpoint - offsetToDetectAheadSubscriber))
                         {
                             return new CommitBuilder().WithCheckpoint(checkPoint + 1).BuildAsEnumerable();
                         }
@@ -188,13 +188,13 @@ namespace LiquidProjections.NEventStore.Specs
                         }
                     });
 
-                    var adapter = new NEventStoreAdapter(eventStore, 11, pollingInterval, 100, () => DateTime.UtcNow);
+                    var adapter = new NEventStoreAdapter(eventStore, 0, pollingInterval, 100, () => DateTime.UtcNow);
                     WithSubject(_ => adapter.Subscribe);
                 });
 
                 When(() =>
                 {
-                    return Subject(requestedCheckpoint, new Subscriber
+                    return Subject(subscriptionCheckpoint, new Subscriber
                     {
                         HandleTransactions = (transactions, info) => Task.FromResult(0)
                     }, "someId");
@@ -208,11 +208,24 @@ namespace LiquidProjections.NEventStore.Specs
 
                 Result.Dispose();
 
-                DateTime lastCallThatDidNotReturnTransactions = pollingTimeStamps.ToArray()[1];
-                DateTime callAfterPollingInterval = pollingTimeStamps.Last();
+                PollingCall lastButOneCall = pollingTimeStamps.Reverse().Skip(1).Take(1).Single();
+                PollingCall lastCall = pollingTimeStamps.Last();
 
-                callAfterPollingInterval.Should().BeAtLeast(pollingInterval).After(lastCallThatDidNotReturnTransactions);
+                lastCall.TimeStampUtc.Should().BeAtLeast(pollingInterval).After(lastButOneCall.TimeStampUtc);
+                lastCall.CheckpointToken.Should().Be(lastButOneCall.CheckpointToken);
             }
+        }
+
+        internal class PollingCall
+        {
+            public PollingCall(string checkpointToken, DateTime timeStampUtc)
+            {
+                CheckpointToken = checkpointToken;
+                TimeStampUtc = timeStampUtc;
+            }
+
+            public string CheckpointToken { get; set; }
+            public DateTime TimeStampUtc { get; set; }
         }
 
         public class When_a_commit_is_already_projected : GivenSubject<CreateSubscription>

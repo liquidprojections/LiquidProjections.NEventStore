@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -43,6 +43,7 @@ namespace LiquidProjections.NEventStore
         /// <param name="cacheSize">
         /// The size of the LRU cache that will hold transactions already loaded from the event store. The larger the cache, 
         /// the higher the chance multiple subscribers can reuse the same transactions without hitting the underlying event store.
+        /// Set to <c>0</c> to disable the cache alltogether.
         /// </param>
         /// <param name="pollInterval">
         /// The amount of time to wait before polling again after the event store has not yielded any transactions anymore.
@@ -60,7 +61,11 @@ namespace LiquidProjections.NEventStore
             this.pollInterval = pollInterval;
             this.maxPageSize = maxPageSize;
             this.getUtcNow = getUtcNow;
-            transactionCacheByPreviousCheckpoint = new LruCache<long, Transaction>(cacheSize);
+
+            if (cacheSize > 0)
+            {
+                transactionCacheByPreviousCheckpoint = new LruCache<long, Transaction>(cacheSize);
+            }
         }
 
         public IDisposable Subscribe(long? lastProcessedCheckpoint, Subscriber subscriber, string subscriptionId)
@@ -113,7 +118,7 @@ namespace LiquidProjections.NEventStore
         {
             Transaction cachedNextTransaction;
 
-            if (transactionCacheByPreviousCheckpoint.TryGet(previousCheckpoint, out cachedNextTransaction))
+            if ((transactionCacheByPreviousCheckpoint != null) && transactionCacheByPreviousCheckpoint.TryGet(previousCheckpoint, out cachedNextTransaction))
             {
                 var resultPage = new List<Transaction>(maxPageSize) { cachedNextTransaction };
 
@@ -346,20 +351,23 @@ namespace LiquidProjections.NEventStore
                     $"from checkpoint {transactions.First().Checkpoint} to checkpoint {transactions.Last().Checkpoint}.");
 #endif
 
-                /* Add to cache in reverse order to prevent other projectors
-                    from requesting already loaded transactions which are not added to cache yet. */
-                for (int index = transactions.Count - 1; index > 0; index--)
+                if (transactionCacheByPreviousCheckpoint != null)
                 {
-                    transactionCacheByPreviousCheckpoint.Set(transactions[index - 1].Checkpoint, transactions[index]);
-                }
+                    /* Add to cache in reverse order to prevent other projectors
+                        from requesting already loaded transactions which are not added to cache yet. */
+                    for (int index = transactions.Count - 1; index > 0; index--)
+                    {
+                        transactionCacheByPreviousCheckpoint.Set(transactions[index - 1].Checkpoint, transactions[index]);
+                    }
 
-                transactionCacheByPreviousCheckpoint.Set(previousCheckpoint, transactions[0]);
+                    transactionCacheByPreviousCheckpoint.Set(previousCheckpoint, transactions[0]);
 
 #if DEBUG
-                LogProvider.GetCurrentClassLogger().Debug(() =>
-                    $"Loader for subscription {subscriptionId ?? "without ID"} has cached {transactions.Count} transactions " +
-                    $"from checkpoint {transactions.First().Checkpoint} to checkpoint {transactions.Last().Checkpoint}.");
+                    LogProvider.GetCurrentClassLogger().Debug(() =>
+                        $"Loader for subscription {subscriptionId ?? "without ID"} has cached {transactions.Count} transactions " +
+                        $"from checkpoint {transactions.First().Checkpoint} to checkpoint {transactions.Last().Checkpoint}.");
 #endif
+                }
             }
             else
             {

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -108,18 +108,19 @@ namespace LiquidProjections.NEventStore
                         firstRequestAfterSubscribing = false;
                     }
 
-                        if (transactions.Count > 0)
-                        {
-                            await subscriber.HandleTransactions(transactions, info).ConfigureAwait(false);
-                        }
+                    if (transactions.Count > 0)
+                    {
+                        await subscriber.HandleTransactions(transactions, info).ConfigureAwait(false);
+
 #if DEBUG
-                    LogProvider.GetCurrentClassLogger().Debug(() =>
-                        $"Subscription {Id} has processed a page of size {page.Transactions.Count} " +
-                        $"from checkpoint {page.Transactions.First().Checkpoint} " +
-                        $"to checkpoint {page.Transactions.Last().Checkpoint}.");
+                        LogProvider.GetCurrentClassLogger().Debug(() =>
+                            $"Subscription {Id} has processed a page of size {page.Transactions.Count} " +
+                            $"from checkpoint {page.Transactions.First().Checkpoint} " +
+                            $"to checkpoint {page.Transactions.Last().Checkpoint}.");
 #endif
 
-                    lastProcessedCheckpoint = page.LastCheckpoint;
+                        lastProcessedCheckpoint = page.LastCheckpoint;
+                    }
                 }
             }
         }
