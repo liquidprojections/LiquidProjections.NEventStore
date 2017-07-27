@@ -39,11 +39,11 @@
     <LangVersion>6</LangVersion>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="LiquidProjections.Abstractions, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\..\packages\LiquidProjections.Abstractions.2.0.0\lib\netstandard1.1\LiquidProjections.Abstractions.dll</HintPath>
+    <Reference Include="LiquidProjections.Abstractions, Version=2.2.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\..\packages\LiquidProjections.Abstractions.2.2.0\lib\netstandard1.1\LiquidProjections.Abstractions.dll</HintPath>
     </Reference>
-    <Reference Include="NEventStore, Version=5.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\..\packages\NEventStore.5.0.1.2\lib\net40\NEventStore.dll</HintPath>
+    <Reference Include="NEventStore, Version=5.2.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\..\packages\NEventStore.5.2.0\lib\net40\NEventStore.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
@@ -58,21 +58,24 @@
     <Compile Include="..\..\SharedAssemblyInfo.cs">
       <Link>SharedAssemblyInfo.cs</Link>
     </Compile>
-    <Compile Include="App_Packages\LibLog.4.2\LibLog.cs" />
-    <Compile Include="CheckpointRequestTimestamp.cs" />
-    <Compile Include="EnumerableExtensions.cs" />
+    <Compile Include="App_Packages\LiquidProjections.PollingEventStore\CheckpointRequestTimestamp.cs" />
+    <Compile Include="App_Packages\LiquidProjections.PollingEventStore\EnumerableExtensions.cs" />
+    <Compile Include="App_Packages\LiquidProjections.PollingEventStore\LibLog.cs" />
+    <Compile Include="App_Packages\LiquidProjections.PollingEventStore\LruCache.cs" />
+    <Compile Include="App_Packages\LiquidProjections.PollingEventStore\Page.cs" />
+    <Compile Include="App_Packages\LiquidProjections.PollingEventStore\PollingEventStoreAdapter.cs" />
+    <Compile Include="App_Packages\LiquidProjections.PollingEventStore\Subscription.cs" />
+    <Compile Include="App_Packages\LiquidProjections.PollingEventStore\TaskExtensions.cs" />
     <Compile Include="NEventStoreAdapter.cs" />
-    <Compile Include="LruCache.cs" />
-    <Compile Include="Page.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="Subscription.cs" />
-    <Compile Include="TaskExtensions.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include=".nuspec">
       <SubType>Designer</SubType>
     </None>
-    <None Include="packages.config" />
+    <None Include="packages.config">
+      <SubType>Designer</SubType>
+    </None>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 

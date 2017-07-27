@@ -5,18 +5,18 @@ using System.Threading.Tasks;
 using LiquidProjections.Abstractions;
 using LiquidProjections.NEventStore.Logging;
 
-namespace LiquidProjections.NEventStore
+namespace LiquidProjections.PollingEventStore
 {
     internal sealed class Subscription : IDisposable
     {
-        private readonly NEventStoreAdapter eventStoreAdapter;
+        private readonly PollingEventStoreAdapter eventStoreAdapter;
         private CancellationTokenSource cancellationTokenSource;
         private readonly object syncRoot = new object();
         private bool isDisposed;
         private long lastProcessedCheckpoint;
         private readonly Subscriber subscriber;
 
-        public Subscription(NEventStoreAdapter eventStoreAdapter, long lastProcessedCheckpoint,
+        public Subscription(PollingEventStoreAdapter eventStoreAdapter, long lastProcessedCheckpoint,
             Subscriber subscriber, string subscriptionId)
         {
             this.eventStoreAdapter = eventStoreAdapter;
@@ -45,7 +45,7 @@ namespace LiquidProjections.NEventStore
 
                 cancellationTokenSource = new CancellationTokenSource();
 #if DEBUG
-                LogProvider.GetCurrentClassLogger().Debug(() => $"Subscription {Id} has been started.");
+                LogProvider.GetLogger(typeof(Subscription)).Debug(() => $"Subscription {Id} has been started.");
 #endif
 
                 SubscriptionInfo info = new SubscriptionInfo
@@ -66,7 +66,7 @@ namespace LiquidProjections.NEventStore
                             }
                             catch (Exception exception)
                             {
-                                LogProvider.GetCurrentClassLogger().FatalException(
+                                LogProvider.GetLogger(typeof(Subscription)).FatalException(
                                     "NEventStore polling task has failed. Event subscription has been cancelled.",
                                     exception);
                             }
@@ -95,13 +95,13 @@ namespace LiquidProjections.NEventStore
                     if (firstRequestAfterSubscribing)
                     {
                         if (!transactions.Any())
-                    {
-                        await subscriber.NoSuchCheckpoint(info);
-                    }
-                    else
-                    {
+                        {
+                            await subscriber.NoSuchCheckpoint(info);
+                        }
+                        else
+                        {
                             transactions = transactions
-                            .Where(t => t.Checkpoint > actualRequestedLastCheckpoint)
+                                .Where(t => t.Checkpoint > actualRequestedLastCheckpoint)
                                 .ToReadOnlyList();
                         }
 
@@ -113,7 +113,7 @@ namespace LiquidProjections.NEventStore
                         await subscriber.HandleTransactions(transactions, info).ConfigureAwait(false);
 
 #if DEBUG
-                        LogProvider.GetCurrentClassLogger().Debug(() =>
+                        LogProvider.GetLogger(typeof(Subscription)).Debug(() =>
                             $"Subscription {Id} has processed a page of size {page.Transactions.Count} " +
                             $"from checkpoint {page.Transactions.First().Checkpoint} " +
                             $"to checkpoint {page.Transactions.Last().Checkpoint}.");
@@ -132,7 +132,7 @@ namespace LiquidProjections.NEventStore
             try
             {
 #if DEBUG
-                LogProvider.GetCurrentClassLogger().Debug(() =>
+                LogProvider.GetLogger(typeof(Subscription)).Debug(() =>
                     $"Subscription {Id} is requesting a page after checkpoint {checkpoint}.");
 #endif
 
@@ -141,7 +141,7 @@ namespace LiquidProjections.NEventStore
                     .ConfigureAwait(false);
 
 #if DEBUG
-                LogProvider.GetCurrentClassLogger().Debug(() =>
+                LogProvider.GetLogger(typeof(Subscription)).Debug(() =>
                     $"Subscription {Id} has got a page of size {page.Transactions.Count} " +
                     $"from checkpoint {page.Transactions.First().Checkpoint} " +
                     $"to checkpoint {page.Transactions.Last().Checkpoint}.");
@@ -179,7 +179,7 @@ namespace LiquidProjections.NEventStore
                 if (cancellationTokenSource != null)
                 {
 #if DEBUG
-                    LogProvider.GetCurrentClassLogger().Debug(() => $"Subscription {Id} is being stopped.");
+                    LogProvider.GetLogger(typeof(Subscription)).Debug(() => $"Subscription {Id} is being stopped.");
 #endif
 
                     if (!cancellationTokenSource.IsCancellationRequested)
@@ -197,7 +197,7 @@ namespace LiquidProjections.NEventStore
                 }
 
 #if DEBUG
-                LogProvider.GetCurrentClassLogger().Debug(() => $"Subscription {Id} has been stopped.");
+                LogProvider.GetLogger(typeof(Subscription)).Debug(() => $"Subscription {Id} has been stopped.");
 #endif
             }
         }

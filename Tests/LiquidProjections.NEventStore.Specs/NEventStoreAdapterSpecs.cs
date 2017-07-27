@@ -165,9 +165,9 @@ namespace LiquidProjections.NEventStore.Specs
             {
                 Given(() =>
                 {
-                    var eventStore = A.Fake<IPersistStreams>();
+                    var streamPersister = A.Fake<IPersistStreams>();
 
-                    A.CallTo(() => eventStore.GetFrom(A<string>.Ignored)).ReturnsLazily<IEnumerable<ICommit>, string>(checkpointToken =>
+                    A.CallTo(() => streamPersister.GetFrom(A<string>.Ignored)).ReturnsLazily<IEnumerable<ICommit>, string>(checkpointToken =>
                     {
                         pollingTimeStamps.Add(new PollingCall(checkpointToken, DateTime.UtcNow));
                         if (pollingTimeStamps.Count == 4)
@@ -188,7 +188,7 @@ namespace LiquidProjections.NEventStore.Specs
                         }
                     });
 
-                    var adapter = new NEventStoreAdapter(eventStore, 0, pollingInterval, 100, () => DateTime.UtcNow);
+                    var adapter = new NEventStoreAdapter(streamPersister, 0, pollingInterval, 100, () => DateTime.UtcNow);
                     WithSubject(_ => adapter.Subscribe);
                 });
 

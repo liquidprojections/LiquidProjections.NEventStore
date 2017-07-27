@@ -2,7 +2,7 @@
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace LiquidProjections.NEventStore
+namespace LiquidProjections.PollingEventStore
 {
     internal static class TaskExtensions
     {

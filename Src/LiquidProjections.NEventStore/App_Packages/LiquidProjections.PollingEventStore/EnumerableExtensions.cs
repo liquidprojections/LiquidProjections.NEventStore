@@ -3,7 +3,7 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Linq;
 
-namespace LiquidProjections.NEventStore
+namespace LiquidProjections.PollingEventStore
 {
     [DebuggerNonUserCode]
     internal static class EnumerableExtensions

@@ -1,6 +1,6 @@
 ﻿using System.Collections.Generic;
 
-namespace LiquidProjections.NEventStore
+namespace LiquidProjections.PollingEventStore
 {
     internal sealed class Page
     {

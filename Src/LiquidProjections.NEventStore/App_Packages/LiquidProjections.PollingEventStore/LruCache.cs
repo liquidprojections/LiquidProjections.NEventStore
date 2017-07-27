@@ -3,7 +3,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 
-namespace LiquidProjections.NEventStore
+namespace LiquidProjections.PollingEventStore
 {
     internal class LruCache<TKey, TValue>
     {

@@ -34,27 +34,26 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="Chill, Version=3.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\..\packages\Chill.3.0.0\lib\net45\Chill.dll</HintPath>
+    <Reference Include="Chill, Version=3.0.1.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\..\packages\Chill.3.0.1\lib\net45\Chill.dll</HintPath>
     </Reference>
-    <Reference Include="FakeItEasy, Version=3.3.2.0, Culture=neutral, PublicKeyToken=eff28e2146d5fd2c, processorArchitecture=MSIL">
-      <HintPath>..\..\packages\FakeItEasy.3.3.2\lib\net40\FakeItEasy.dll</HintPath>
+    <Reference Include="FakeItEasy, Version=3.4.2.0, Culture=neutral, PublicKeyToken=eff28e2146d5fd2c, processorArchitecture=MSIL">
+      <HintPath>..\..\packages\FakeItEasy.3.4.2\lib\net45\FakeItEasy.dll</HintPath>
     </Reference>
-    <Reference Include="FluentAssertions, Version=4.19.2.0, Culture=neutral, PublicKeyToken=33f2691a05b67b6a, processorArchitecture=MSIL">
-      <HintPath>..\..\packages\FluentAssertions.4.19.2\lib\net45\FluentAssertions.dll</HintPath>
+    <Reference Include="FluentAssertions, Version=4.19.3.0, Culture=neutral, PublicKeyToken=33f2691a05b67b6a, processorArchitecture=MSIL">
+      <HintPath>..\..\packages\FluentAssertions.4.19.3\lib\net45\FluentAssertions.dll</HintPath>
     </Reference>
-    <Reference Include="FluentAssertions.Core, Version=4.19.2.0, Culture=neutral, PublicKeyToken=33f2691a05b67b6a, processorArchitecture=MSIL">
-      <HintPath>..\..\packages\FluentAssertions.4.19.2\lib\net45\FluentAssertions.Core.dll</HintPath>
+    <Reference Include="FluentAssertions.Core, Version=4.19.3.0, Culture=neutral, PublicKeyToken=33f2691a05b67b6a, processorArchitecture=MSIL">
+      <HintPath>..\..\packages\FluentAssertions.4.19.3\lib\net45\FluentAssertions.Core.dll</HintPath>
     </Reference>
-    <Reference Include="LiquidProjections.Abstractions, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\..\packages\LiquidProjections.Abstractions.2.0.0\lib\netstandard1.1\LiquidProjections.Abstractions.dll</HintPath>
+    <Reference Include="LiquidProjections.Abstractions, Version=2.2.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\..\packages\LiquidProjections.Abstractions.2.2.0\lib\netstandard1.1\LiquidProjections.Abstractions.dll</HintPath>
     </Reference>
-    <Reference Include="NEventStore, Version=5.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\..\packages\NEventStore.5.0.1.2\lib\net40\NEventStore.dll</HintPath>
+    <Reference Include="NEventStore, Version=5.2.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\..\packages\NEventStore.5.2.0\lib\net40\NEventStore.dll</HintPath>
     </Reference>
-    <Reference Include="Ploeh.AutoFixture, Version=3.50.2.0, Culture=neutral, PublicKeyToken=b24654c590009d4f, processorArchitecture=MSIL">
-      <HintPath>..\..\packages\AutoFixture.3.50.2\lib\net40\Ploeh.AutoFixture.dll</HintPath>
-      <Private>True</Private>
+    <Reference Include="Ploeh.AutoFixture, Version=3.50.0.0, Culture=neutral, PublicKeyToken=b24654c590009d4f, processorArchitecture=MSIL">
+      <HintPath>..\..\packages\AutoFixture.3.50.3\lib\net40\Ploeh.AutoFixture.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
