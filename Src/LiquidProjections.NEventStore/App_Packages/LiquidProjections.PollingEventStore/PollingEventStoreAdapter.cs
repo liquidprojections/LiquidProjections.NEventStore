@@ -32,7 +32,6 @@ namespace LiquidProjections.PollingEventStore
         /// </summary>
         private readonly LruCache<long, Transaction> transactionCacheByPreviousCheckpoint;
 
-        private readonly CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
         private CheckpointRequestTimestamp lastSuccessfulPollingRequestWithoutResults;
 
         /// <summary>
@@ -173,11 +172,14 @@ namespace LiquidProjections.PollingEventStore
         {
             while (true)
             {
-                cancellationTokenSource.Token.ThrowIfCancellationRequested();
-
                 if (isDisposed)
                 {
-                    return new Page(previousCheckpoint, new Transaction[0]);
+#if DEBUG
+                    LogProvider.GetLogger(typeof(PollingEventStoreAdapter)).Debug(() =>
+                        $"Page loading for subscription {subscriptionId} cancelled because the adapter is disposed.");
+#endif
+
+                    throw new OperationCanceledException();
                 }
 
                 CheckpointRequestTimestamp effectiveLastExistingCheckpointRequest =
@@ -246,8 +248,22 @@ namespace LiquidProjections.PollingEventStore
                                      $"for a page after checkpoint {previousCheckpoint}.");
 #endif
 
-                    // Ignore result.
-                    Task _ = TryLoadNextPageAndMakeLoaderComplete(previousCheckpoint, taskCompletionSource, subscriptionId);
+                    if (isDisposed)
+                    {
+#if DEBUG
+                        LogProvider.GetLogger(typeof(PollingEventStoreAdapter))
+                            .Debug(() => $"The loader {loader.Id} is cancelled because the adapter is disposed.");
+#endif
+                        
+                        // If the adapter is disposed before the current task is set, we cancel the task
+                        // so we do not touch the event store. 
+                        taskCompletionSource.SetCanceled();
+                    }
+                    else
+                    {
+                        // Ignore result.
+                        Task _ = TryLoadNextPageAndMakeLoaderComplete(previousCheckpoint, taskCompletionSource, subscriptionId);
+                    }
                 }
                 else
                 {
@@ -394,17 +410,23 @@ namespace LiquidProjections.PollingEventStore
                 {
                     isDisposed = true;
 
-                    cancellationTokenSource.Cancel();
-
                     foreach (Subscription subscription in subscriptions.ToArray())
                     {
                         subscription.Complete();
                     }
 
+                    // New loading tasks are no longer started at this point.
+                    // After the current loading task is finished, the event store is no longer used and can be disposed.
                     Task loaderToWaitFor = Volatile.Read(ref currentLoader);
-                    loaderToWaitFor?.Wait();
 
-                    cancellationTokenSource.Dispose();
+                    try
+                    {
+                        loaderToWaitFor?.Wait();
+                    }
+                    catch (AggregateException)
+                    {
+                        // Ignore.
+                    }
 
                     (eventStore as IDisposable)?.Dispose();
                 }
