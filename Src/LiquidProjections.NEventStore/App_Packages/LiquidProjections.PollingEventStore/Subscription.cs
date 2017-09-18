@@ -72,7 +72,7 @@ namespace LiquidProjections.PollingEventStore
                                     exception);
                             }
                         },
-                        cancellationTokenSource.Token,
+                        CancellationToken.None,
                         TaskCreationOptions.DenyChildAttach | TaskCreationOptions.LongRunning,
                         TaskScheduler.Default)
                     .Unwrap();
@@ -169,43 +169,47 @@ namespace LiquidProjections.PollingEventStore
                 {
                     isDisposed = true;
 
-                    // Wait for the task asynchronously.
-                    Task.Run(() =>
+#if DEBUG
+                    LogProvider.GetLogger(typeof(Subscription)).Debug(() => $"Subscription {Id} is being stopped.");
+#endif
+
+                    if (cancellationTokenSource != null)
                     {
-                        if (cancellationTokenSource != null)
+                        try
                         {
-#if DEBUG
-                            LogProvider.GetLogger(typeof(Subscription)).Debug(() => $"Subscription {Id} is being stopped.");
-#endif
-
-                            if (!cancellationTokenSource.IsCancellationRequested)
-                            {
-                                cancellationTokenSource.Cancel();
-                            }
-
-                            try
-                            {
-                                Task?.Wait();
-                            }
-                            catch (AggregateException)
-                            {
-                                // Ignore.
-                            }
-
-                            cancellationTokenSource.Dispose();
+                            cancellationTokenSource.Cancel();
                         }
-
-                        lock (eventStoreAdapter.subscriptionLock)
+                        catch (AggregateException)
                         {
-                            eventStoreAdapter.subscriptions.Remove(this);
+                            // Ignore.
                         }
+                    }
 
-#if DEBUG
-                        LogProvider.GetLogger(typeof(Subscription)).Debug(() => $"Subscription {Id} has been stopped.");
-#endif
-                    });
+                    lock (eventStoreAdapter.subscriptionLock)
+                    {
+                        eventStoreAdapter.subscriptions.Remove(this);
+                    }
+                    
+                    if (Task == null)
+                    {
+                        FinishDisposing();
+                    }
+                    else
+                    {
+                        // Wait for the task asynchronously.
+                        Task.ContinueWith(_ => FinishDisposing());
+                    }
                 }
             }
+        }
+
+        private void FinishDisposing()
+        {
+            cancellationTokenSource?.Dispose();
+            
+#if DEBUG
+            LogProvider.GetLogger(typeof(Subscription)).Debug(() => $"Subscription {Id} has been stopped.");
+#endif
         }
     }
 }
