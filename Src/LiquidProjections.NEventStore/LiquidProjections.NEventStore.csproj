@@ -23,7 +23,7 @@
     <WarningLevel>4</WarningLevel>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <DocumentationFile>bin\Debug\LiquidProjections.NEventStore.XML</DocumentationFile>
-    <NoWarn>1591</NoWarn>
+    <NoWarn>1591; 1573</NoWarn>
     <LangVersion>6</LangVersion>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
@@ -35,7 +35,7 @@
     <WarningLevel>4</WarningLevel>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <DocumentationFile>bin\Release\LiquidProjections.NEventStore.XML</DocumentationFile>
-    <NoWarn>1591</NoWarn>
+    <NoWarn>1591; 1573</NoWarn>
     <LangVersion>6</LangVersion>
   </PropertyGroup>
   <ItemGroup>
@@ -60,7 +60,6 @@
     </Compile>
     <Compile Include="App_Packages\LiquidProjections.PollingEventStore\CheckpointRequestTimestamp.cs" />
     <Compile Include="App_Packages\LiquidProjections.PollingEventStore\EnumerableExtensions.cs" />
-    <Compile Include="App_Packages\LiquidProjections.PollingEventStore\LibLog.cs" />
     <Compile Include="App_Packages\LiquidProjections.PollingEventStore\LruCache.cs" />
     <Compile Include="App_Packages\LiquidProjections.PollingEventStore\Page.cs" />
     <Compile Include="App_Packages\LiquidProjections.PollingEventStore\PollingEventStoreAdapter.cs" />
